@@ -18,3 +18,6 @@ Thumbs.db
 
 # Generated outputs (large .mat files)
 results/
+
+# Draft articles
+medium_article.md
