@@ -4,7 +4,7 @@ Extracts 3RC equivalent circuit model parameters from HPPC and C/20 test data fo
 
 ## Dataset
 
-**Source:** [Mendeley Data - CALB L148N58A Testing Campaign](https://data.mendeley.com/)
+**Source:** [Mendeley Data - CALB L148N58A Testing Campaign](https://data.mendeley.com/datasets/ycx459r5c3/1)
 
 | Property | Value |
 |---|---|
