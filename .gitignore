@@ -1,0 +1,22 @@
+# Mendeley dataset (too large for git)
+A Dataset for Large Prismatic Lithium-Ion Battery Cells*/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated outputs (reproducible by running the script)
+results/
+all_cell_params.json
+comparison_table.xlsx
