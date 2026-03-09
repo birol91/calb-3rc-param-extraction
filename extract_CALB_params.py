@@ -15,6 +15,7 @@ Ciktilar:
     - all_cell_params.json (tum parametreler)
     - Konsola detayli tablo + kiyaslama matrisi
     - comparison_table.xlsx (Excel kiyaslama tablosu)
+    - outputs/ klasorunde karsilastirma grafikleri (PNG)
 
 Dogrulama Notlari:
     - Akim konvansiyonu: Negatif = discharge (dogrulandi, HPPC verisinde -58A = discharge)
@@ -32,6 +33,9 @@ import os
 import json
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -621,6 +625,174 @@ def save_comparison_excel(all_results, output_path):
 
 
 # =============================================================================
+# GRAFIK CIKTILARI
+# =============================================================================
+
+def generate_comparison_plots(all_results, output_dir):
+    """
+    11 hucre icin kapasite ve esdeger devre elemanlarini karsilastirmali
+    grafik olarak cikarir. Her sicaklik icin ayri grafikler uretir.
+    Ciktilar: outputs/ klasorune PNG olarak kaydedilir.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    colors = plt.cm.tab20(np.linspace(0, 1, len(CELL_IDS)))
+
+    # =========================================================================
+    # 1) Kapasite karsilastirma (bar chart - 3 sicaklik yan yana)
+    # =========================================================================
+    fig, ax = plt.subplots(figsize=(14, 6))
+    x = np.arange(len(CELL_IDS))
+    width = 0.25
+
+    for ti, temp in enumerate(TEMPERATURES):
+        caps = [all_results[f"{cid}_T{temp}C"]['capacity'] for cid in CELL_IDS]
+        ax.bar(x + ti * width, caps, width, label=f'{temp}°C')
+
+    ax.set_xlabel('Cell ID')
+    ax.set_ylabel('Capacity (Ah)')
+    ax.set_title('Capacity Comparison - All Cells at 10°C, 25°C, 40°C')
+    ax.set_xticks(x + width)
+    ax.set_xticklabels(CELL_IDS, rotation=45, ha='right')
+    ax.legend()
+    ax.grid(axis='y', alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(os.path.join(output_dir, 'capacity_comparison.png'), dpi=150)
+    plt.close(fig)
+    print(f"  -> capacity_comparison.png")
+
+    # =========================================================================
+    # 2) R0 karsilastirma (bar chart - 3 sicaklik yan yana)
+    # =========================================================================
+    fig, ax = plt.subplots(figsize=(14, 6))
+    for ti, temp in enumerate(TEMPERATURES):
+        r0s = [np.mean(all_results[f"{cid}_T{temp}C"]['R0']) * 1000 for cid in CELL_IDS]
+        ax.bar(x + ti * width, r0s, width, label=f'{temp}°C')
+
+    ax.set_xlabel('Cell ID')
+    ax.set_ylabel('R0 Mean (mΩ)')
+    ax.set_title('R0 Mean Comparison - All Cells at 10°C, 25°C, 40°C')
+    ax.set_xticks(x + width)
+    ax.set_xticklabels(CELL_IDS, rotation=45, ha='right')
+    ax.legend()
+    ax.grid(axis='y', alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(os.path.join(output_dir, 'R0_mean_comparison.png'), dpi=150)
+    plt.close(fig)
+    print(f"  -> R0_mean_comparison.png")
+
+    # =========================================================================
+    # 3) Her sicaklik icin SOC bazli parametre grafikleri
+    #    R0, R1, R2, R3, tau1, tau2, tau3 vs SOC (11 hucre ayni grafik)
+    # =========================================================================
+    soc_params = [
+        ('R0', 'R0 (mΩ)', 1000),
+        ('R1', 'R1 (mΩ)', 1000),
+        ('R2', 'R2 (mΩ)', 1000),
+        ('R3', 'R3 (mΩ)', 1000),
+        ('tau1', 'τ1 (s)', 1),
+        ('tau2', 'τ2 (s)', 1),
+        ('tau3', 'τ3 (s)', 1),
+    ]
+
+    for temp in TEMPERATURES:
+        # Her sicaklik icin 7 parametre, 2x4 subplot (son hucre bos)
+        fig, axes = plt.subplots(2, 4, figsize=(20, 10))
+        fig.suptitle(f'3RC Parameters vs SOC - {temp}°C (All 11 Cells)', fontsize=14)
+        axes_flat = axes.flatten()
+
+        for pi, (param_key, param_label, scale) in enumerate(soc_params):
+            ax = axes_flat[pi]
+            for ci, cell_id in enumerate(CELL_IDS):
+                key = f"{cell_id}_T{temp}C"
+                vals = np.array(all_results[key][param_key]) * scale
+                ax.plot(SOC_BREAKPOINTS, vals, 'o-', color=colors[ci],
+                        label=cell_id, markersize=3, linewidth=1)
+            ax.set_xlabel('SOC')
+            ax.set_ylabel(param_label)
+            ax.set_title(param_label)
+            ax.grid(alpha=0.3)
+            ax.invert_xaxis()
+
+        # Son subplot'a legend koy
+        axes_flat[7].axis('off')
+        handles, labels = axes_flat[0].get_legend_handles_labels()
+        axes_flat[7].legend(handles, labels, loc='center', ncol=2,
+                            title='Cell ID', fontsize=9)
+
+        fig.tight_layout()
+        fig.savefig(os.path.join(output_dir, f'parameters_vs_SOC_{temp}C.png'), dpi=150)
+        plt.close(fig)
+        print(f"  -> parameters_vs_SOC_{temp}C.png")
+
+    # =========================================================================
+    # 4) Em (OCV) vs SOC karsilastirma (her sicaklik ayri subplot)
+    # =========================================================================
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    fig.suptitle('OCV (Em) vs SOC - All 11 Cells', fontsize=14)
+
+    for ti, temp in enumerate(TEMPERATURES):
+        ax = axes[ti]
+        for ci, cell_id in enumerate(CELL_IDS):
+            key = f"{cell_id}_T{temp}C"
+            em = all_results[key]['Em']
+            ax.plot(SOC_BREAKPOINTS, em, 'o-', color=colors[ci],
+                    label=cell_id, markersize=3, linewidth=1)
+        ax.set_xlabel('SOC')
+        ax.set_ylabel('Em (V)')
+        ax.set_title(f'{temp}°C')
+        ax.grid(alpha=0.3)
+        ax.invert_xaxis()
+        if ti == 2:
+            ax.legend(fontsize=7, ncol=2)
+
+    fig.tight_layout()
+    fig.savefig(os.path.join(output_dir, 'OCV_vs_SOC_comparison.png'), dpi=150)
+    plt.close(fig)
+    print(f"  -> OCV_vs_SOC_comparison.png")
+
+    # =========================================================================
+    # 5) Box plot: parametre dagilimi (11 hucre, her sicaklik icin)
+    # =========================================================================
+    box_params = [
+        ('Capacity (Ah)', lambda r: r['capacity']),
+        ('R0 Mean (mΩ)', lambda r: np.mean(r['R0']) * 1000),
+        ('R1 Mean (mΩ)', lambda r: np.mean(r['R1']) * 1000),
+        ('R2 Mean (mΩ)', lambda r: np.mean(r['R2']) * 1000),
+        ('R3 Mean (mΩ)', lambda r: np.mean(r['R3']) * 1000),
+        ('τ1 Mean (s)', lambda r: np.mean(r['tau1'])),
+        ('τ2 Mean (s)', lambda r: np.mean(r['tau2'])),
+        ('τ3 Mean (s)', lambda r: np.mean(r['tau3'])),
+    ]
+
+    fig, axes = plt.subplots(2, 4, figsize=(20, 10))
+    fig.suptitle('Parameter Distribution Across 11 Cells (Box Plot)', fontsize=14)
+    axes_flat = axes.flatten()
+
+    for pi, (param_label, extract_fn) in enumerate(box_params):
+        ax = axes_flat[pi]
+        data_by_temp = []
+        for temp in TEMPERATURES:
+            vals = [extract_fn(all_results[f"{cid}_T{temp}C"]) for cid in CELL_IDS]
+            data_by_temp.append(vals)
+        bp = ax.boxplot(data_by_temp, labels=[f'{t}°C' for t in TEMPERATURES],
+                        patch_artist=True)
+        colors_box = ['#5B9BD5', '#70AD47', '#ED7D31']
+        for patch, color in zip(bp['boxes'], colors_box):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.6)
+        ax.set_title(param_label)
+        ax.grid(axis='y', alpha=0.3)
+
+    fig.tight_layout()
+    fig.savefig(os.path.join(output_dir, 'parameter_distribution_boxplot.png'), dpi=150)
+    plt.close(fig)
+    print(f"  -> parameter_distribution_boxplot.png")
+
+    return output_dir
+
+
+# =============================================================================
 # ANA HESAPLAMA
 # =============================================================================
 
@@ -750,6 +922,17 @@ def main():
     excel_path = os.path.join(SCRIPT_DIR, 'comparison_table.xlsx')
     save_comparison_excel(all_results, excel_path)
     print(f"\nExcel kaydedildi: {excel_path}")
+
+    # =============================================================================
+    # GRAFIK CIKTILARI
+    # =============================================================================
+    print("\n" + "=" * 90)
+    print("  GRAFIKLER OLUSTURULUYOR")
+    print("=" * 90)
+
+    plots_dir = os.path.join(SCRIPT_DIR, 'outputs')
+    generate_comparison_plots(all_results, plots_dir)
+    print(f"\nGrafikler kaydedildi: {plots_dir}/")
 
     # =============================================================================
     # OZET TABLO

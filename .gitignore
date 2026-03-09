@@ -18,5 +18,6 @@ Thumbs.db
 
 # Generated outputs (reproducible by running the script)
 results/
+outputs/
 all_cell_params.json
 comparison_table.xlsx
